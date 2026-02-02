@@ -5,8 +5,8 @@ description = "Server-side caching framework for GraphQL APIs"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Raphael Nogueira" }]
-keywords = ["graphql", "cache", "ariadne", "strawberry", "async"]
+authors = [{ name = "Raphael Nogueira", email = "raphael0608@gmail.com" }]
+keywords = ["graphql", "cache", "ariadne", "strawberry", "async", "apollo", "cachecontrol"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -14,9 +14,16 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Framework :: AsyncIO",
     "Topic :: Internet :: WWW/HTTP",
 ]
+
+[project.urls]
+Homepage = "https://github.com/raphaelnog/cacheql"
+Repository = "https://github.com/raphaelnog/cacheql"
+Issues = "https://github.com/raphaelnog/cacheql/issues"
+Changelog = "https://github.com/raphaelnog/cacheql/releases"
 
 dependencies = [
     "cachetools>=5.0",
