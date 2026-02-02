@@ -82,7 +82,8 @@ type Post @cacheControl(maxAge: 300) {
 
 ```python
 from ariadne import QueryType, make_executable_schema
-from ariadne.asgi import GraphQL
+from fastapi import FastAPI
+
 from cacheql import (
     CacheService,
     CacheConfig,
@@ -91,7 +92,7 @@ from cacheql import (
     JsonSerializer,
     get_cache_control_directive_sdl,
 )
-from cacheql.adapters.ariadne import CacheExtension
+from cacheql.adapters.ariadne import CachingGraphQL
 
 # Include directive definition in your schema
 type_defs = get_cache_control_directive_sdl() + """
@@ -121,8 +122,12 @@ schema = make_executable_schema(type_defs, query)
 
 # Create cache service
 config = CacheConfig(
+    enabled=True,
     use_cache_control=True,
     default_max_age=0,  # No cache by default (conservative)
+    calculate_http_headers=True,
+    cache_queries=True,
+    cache_mutations=False,
 )
 cache_service = CacheService(
     backend=InMemoryCacheBackend(maxsize=1000),
@@ -131,13 +136,16 @@ cache_service = CacheService(
     config=config,
 )
 
-# Create extension with schema for directive parsing
-extension = CacheExtension(cache_service, schema=schema)
-
-app = GraphQL(
+# Create the GraphQL app with caching
+graphql_app = CachingGraphQL(
     schema,
-    extensions=[extension],
+    cache_service=cache_service,
+    debug=True,
 )
+
+# Mount on FastAPI
+app = FastAPI()
+app.mount("/graphql", graphql_app)
 ```
 
 ## Cache Control Semantics
@@ -279,20 +287,20 @@ config = CacheConfig(
 )
 ```
 
-## Accessing Cache Policy
+## Accessing Cache Statistics
 
-After request execution, you can access the calculated cache policy:
+You can access cache statistics through the GraphQL app:
 
 ```python
-extension = CacheExtension(cache_service, schema=schema)
+graphql_app = CachingGraphQL(schema, cache_service=cache_service)
 
-# After request_finished is called
-policy = extension.get_cache_policy()
-if policy:
-    print(f"maxAge: {policy.max_age}")
-    print(f"scope: {policy.scope.value}")
-    print(f"cacheable: {policy.is_cacheable}")
-    print(f"header: {policy.to_http_header()}")
+# Access statistics
+stats = graphql_app.cache_stats
+print(f"Hits: {stats['hits']}")
+print(f"Misses: {stats['misses']}")
+
+# Or directly from the cache service
+stats = cache_service.stats
 ```
 
 ## Cache Invalidation
@@ -310,38 +318,35 @@ await cache_service.invalidate(["User:123"])
 await cache_service.clear()
 ```
 
-## Statistics
+## HTTP Headers
+
+When using `CachingGraphQL`, cache control headers are automatically set on responses:
+
+- `Cache-Control: max-age=300, public` - for cacheable responses
+- `Cache-Control: max-age=60, private` - for private responses
+- `Cache-Control: no-store` - when maxAge is 0
+- `X-Cache: HIT` - indicates response was served from cache
+
+To read these headers in middleware (e.g., with FastAPI):
 
 ```python
-stats = cache_service.stats
-print(f"Hits: {stats['hits']}")
-print(f"Misses: {stats['misses']}")
-print(f"Total: {stats['total']}")
-```
+from starlette.middleware.base import BaseHTTPMiddleware
 
-## Response Extensions
+class CacheHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
 
-cacheql adds metadata to GraphQL response extensions:
+        # Read headers set by CachingGraphQL
+        cache_header = getattr(request.state, "cache_control_header", None)
+        if cache_header:
+            response.headers["Cache-Control"] = cache_header
 
-```json
-{
-  "data": { ... },
-  "extensions": {
-    "cacheql": {
-      "cached": false,
-      "cacheControl": {
-        "maxAge": 300,
-        "scope": "PUBLIC",
-        "cacheable": true
-      },
-      "stats": {
-        "hits": 10,
-        "misses": 5,
-        "total": 15
-      }
-    }
-  }
-}
+        if getattr(request.state, "cache_hit", False):
+            response.headers["X-Cache"] = "HIT"
+
+        return response
+
+app.add_middleware(CacheHeaderMiddleware)
 ```
 
 ## Architecture
