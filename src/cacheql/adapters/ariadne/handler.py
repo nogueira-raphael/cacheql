@@ -56,7 +56,7 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
         *,
         context_value: Any = None,
         query_document: Any = None,
-    ) -> tuple[bool, dict]:
+    ) -> tuple[bool, dict[str, Any]]:
         if not isinstance(data, dict):
             return await super().execute_graphql_query(
                 request, data,

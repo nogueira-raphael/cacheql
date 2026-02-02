@@ -118,12 +118,10 @@ class CacheExtensionInstance:
         operation_name = ctx.operation_name if hasattr(ctx, "operation_name") else None
 
         # Check if this is a mutation
-        if hasattr(ctx, "operation_type"):
-            from strawberry.types import OperationType
-
-            self._is_mutation = ctx.operation_type == OperationType.MUTATION
+        if hasattr(ctx, "operation_type") and ctx.operation_type is not None:
+            op_type = str(ctx.operation_type).upper()
+            self._is_mutation = "MUTATION" in op_type
         else:
-            # Fallback: check query string
             query_lower = query.lower().strip()
             self._is_mutation = query_lower.startswith("mutation")
 
