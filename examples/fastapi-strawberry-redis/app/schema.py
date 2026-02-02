@@ -202,6 +202,3 @@ class Mutation:
         """Reset database call statistics."""
         db.reset_call_count()
         return True
-
-
-schema = strawberry.Schema(query=Query, mutation=Mutation)

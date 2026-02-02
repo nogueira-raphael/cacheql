@@ -4,13 +4,14 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any
 
+import strawberry
 from cacheql_redis import RedisCacheBackend
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from strawberry.fastapi import GraphQLRouter
 
 from app import database as db
-from app.schema import schema
+from app.schema import Mutation, Query
 from cacheql import CacheConfig, CacheService, DefaultKeyBuilder, JsonSerializer
 from cacheql.adapters.strawberry import CacheExtension
 
@@ -79,11 +80,17 @@ async def get_context(request: Request) -> dict[str, Any]:
 # Create cache extension
 cache_extension = CacheExtension(cache_service)
 
-# Create GraphQL router with caching extension
+# Create schema with cache extension
+schema = strawberry.Schema(
+    query=Query,
+    mutation=Mutation,
+    extensions=[cache_extension],
+)
+
+# Create GraphQL router
 graphql_app = GraphQLRouter(
     schema,
     context_getter=get_context,
-    extensions=[cache_extension],
 )
 
 app.include_router(graphql_app, prefix="/graphql")
