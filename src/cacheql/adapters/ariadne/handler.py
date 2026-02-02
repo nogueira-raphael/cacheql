@@ -59,7 +59,9 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
     ) -> tuple[bool, dict]:
         if not isinstance(data, dict):
             return await super().execute_graphql_query(
-                request, data, context_value=context_value, query_document=query_document
+                request, data,
+                context_value=context_value,
+                query_document=query_document,
             )
 
         query = data.get("query", "")
@@ -70,14 +72,18 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
         if query and query.strip().lower().startswith("mutation"):
             self._log("Skipping cache for mutation")
             return await super().execute_graphql_query(
-                request, data, context_value=context_value, query_document=query_document
+                request, data,
+                context_value=context_value,
+                query_document=query_document,
             )
 
         # Check should_cache callback
         if self._should_cache and not self._should_cache(data):
             self._log("Skipping cache per should_cache callback")
             return await super().execute_graphql_query(
-                request, data, context_value=context_value, query_document=query_document
+                request, data,
+                context_value=context_value,
+                query_document=query_document,
             )
 
         # Try cache first
