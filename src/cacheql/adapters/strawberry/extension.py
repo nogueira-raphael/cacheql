@@ -61,6 +61,26 @@ def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
             yield
             await self._cache_response()
 
+        async def on_execute(self) -> AsyncIterator[None]:
+            """Hook called around query execution.
+
+            If we have a cached response, set result before execution.
+            """
+            if self._cached_response is not None:
+                # We have a cached response - set result before yield
+                from strawberry.types.execution import ExecutionResult
+
+                ctx = self.execution_context
+                ctx.result = ExecutionResult(data=self._cached_response, errors=[])
+            yield
+            # After execution - if we had cached, restore the cached result
+            # (in case execution overwrote it)
+            if self._cached_response is not None:
+                from strawberry.types.execution import ExecutionResult
+
+                ctx = self.execution_context
+                ctx.result = ExecutionResult(data=self._cached_response, errors=[])
+
         async def _check_cache(self) -> None:
             """Check cache before execution."""
             ctx = self.execution_context
