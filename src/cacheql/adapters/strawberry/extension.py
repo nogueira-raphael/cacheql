@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from strawberry.types import ExecutionContext
 
 
-def CacheExtension(
+def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
     cache_service: CacheService,
     should_cache: Callable[["ExecutionContext"], bool] | None = None,
 ) -> type[SchemaExtension]:
