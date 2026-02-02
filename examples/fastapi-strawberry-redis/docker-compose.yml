@@ -7,10 +7,18 @@ services:
       - REDIS_URL=redis://redis:6379
       - DEBUG=true
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - ./app:/app/app
       - ./data:/app/data
+      - ../../src/cacheql:/app/cacheql
+      - ../../extras/redis/src/cacheql_redis:/app/cacheql_redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   redis:
     image: redis:7-alpine
@@ -18,6 +26,12 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    command: redis-server --appendonly yes
 
 volumes:
   redis_data:

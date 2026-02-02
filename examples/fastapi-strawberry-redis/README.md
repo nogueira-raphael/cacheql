@@ -12,29 +12,40 @@ This example demonstrates how to use **cacheql** with [Strawberry GraphQL](https
 
 ## Quick Start
 
-### Using Docker Compose
+### Using Docker Compose (Recommended)
 
 ```bash
-docker-compose up
+docker-compose up --build
 ```
 
 The GraphQL playground will be available at http://localhost:8000/graphql
 
+> **Note:** Docker Compose mounts `cacheql` and `cacheql_redis` from the parent repository. This example is designed to run from within the cacheql repository.
+
 ### Manual Setup
 
-1. Install dependencies:
+1. Install cacheql from the repository root:
 
 ```bash
+# From repository root
+pip install -e .
+pip install -e extras/redis
+```
+
+2. Install example dependencies:
+
+```bash
+cd examples/fastapi-strawberry-redis
 pip install -r requirements.txt
 ```
 
-2. Start Redis:
+3. Start Redis:
 
 ```bash
 docker run -d -p 6379:6379 redis:7-alpine
 ```
 
-3. Run the application:
+4. Run the application:
 
 ```bash
 uvicorn app.main:app --reload
