@@ -23,10 +23,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/raphaelnog/cacheql"
-Repository = "https://github.com/raphaelnog/cacheql"
-Issues = "https://github.com/raphaelnog/cacheql/issues"
-Changelog = "https://github.com/raphaelnog/cacheql/releases"
+Homepage = "https://github.com/nogueira-raphael/cacheql"
+Repository = "https://github.com/nogueira-raphael/cacheql"
+Issues = "https://github.com/nogueira-raphael/cacheql/issues"
+Changelog = "https://github.com/nogueira-raphael/cacheql/releases"
 
 [project.optional-dependencies]
 ariadne = ["ariadne>=0.20"]
