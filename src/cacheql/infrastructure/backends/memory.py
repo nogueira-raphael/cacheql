@@ -3,7 +3,7 @@
 import fnmatch
 from datetime import timedelta
 
-from cachetools import TTLCache  # type: ignore[import-untyped]
+from cachetools import TTLCache
 
 
 class InMemoryCacheBackend:
