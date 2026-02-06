@@ -1,6 +1,6 @@
 [project]
 name = "cacheql"
-version = "0.0.1a"
+version = "0.0.1a1"
 description = "Server-side caching framework for GraphQL APIs"
 readme = "README.md"
 requires-python = ">=3.10"
