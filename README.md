@@ -1,5 +1,10 @@
 # cacheql
 
+[![codecov](https://codecov.io/github/nogueira-raphael/cacheql/graph/badge.svg)](https://codecov.io/github/nogueira-raphael/cacheql)
+![PyPI - Version](https://img.shields.io/pypi/v/cacheql)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/cacheql)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/cacheql)
+
 Server-side caching framework for GraphQL APIs in Python.
 
 **Compatible with Apollo Server's `@cacheControl` directive semantics.**
