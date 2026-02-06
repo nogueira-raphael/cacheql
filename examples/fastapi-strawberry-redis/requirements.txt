@@ -1,0 +1,15 @@
+# Web framework
+fastapi>=0.100.0
+uvicorn[standard]>=0.23.0
+
+# GraphQL
+strawberry-graphql[fastapi]>=0.200.0
+
+# Database
+aiosqlite>=0.19.0
+
+# Cache backend
+redis>=5.0.0
+
+# Utilities
+cachetools>=5.0.0
