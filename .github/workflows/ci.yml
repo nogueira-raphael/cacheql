@@ -28,6 +28,14 @@ jobs:
       - name: Run tests
         run: uv run pytest --cov=cacheql --cov-report=xml
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: matrix.python-version == '3.12'
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          fail_ci_if_error: false
+
       - name: Lint
         run: uv run ruff check src/
 
