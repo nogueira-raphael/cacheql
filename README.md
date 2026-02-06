@@ -9,6 +9,24 @@ Server-side caching framework for GraphQL APIs in Python.
 
 **Compatible with Apollo Server's `@cacheControl` directive semantics.**
 
+## Caching Strategies
+
+CacheQL implements the core caching strategies recommended by the GraphQL community, as documented in [GraphQL.js Caching Strategies](https://www.graphql-js.org/docs/caching-strategies/):
+
+| Strategy | Status | Description |
+|----------|--------|-------------|
+| **Resolver-level caching** | ✅ | Cache results of specific fields via `@cached` decorator |
+| **Operation result caching** | ✅ | Cache entire query responses (query + variables) |
+| **Cache invalidation** | ✅ | TTL-based expiration and tag-based manual purging |
+
+Additional features following [Apollo Server's caching semantics](https://www.apollographql.com/docs/apollo-server/performance/caching/):
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **@cacheControl directive** | ✅ | Declarative cache hints in schema |
+| **HTTP Cache-Control headers** | ✅ | Automatic header generation for CDN/proxy integration |
+| **Scope control** | ✅ | PUBLIC/PRIVATE cache partitioning |
+
 ## Features
 
 - **Apollo-style Cache Control**: Full support for `@cacheControl` directives
