@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- `CacheHint.to_http_header()` method (unused; HTTP header generation is handled by `ResponseCachePolicy.to_http_header()`)
+- Deprecated `CacheExtension` and `create_cache_extension` from Ariadne adapter (use `CachingGraphQL` instead)
+
 ## [0.0.1a1] - 2026-02-06
 
 ### Added
