@@ -93,6 +93,10 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
                 query_document=query_document,
             )
 
+        # Resolve context before cache lookup so session keys are available
+        if context_value is None:
+            context_value = await self.get_context_for_request(request, data)
+
         # Try cache first
         session_context = self._extract_session_context(context_value)
         cached = await self._cache_service.get_cached_response(
