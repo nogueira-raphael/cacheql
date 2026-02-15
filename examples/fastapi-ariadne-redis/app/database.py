@@ -17,9 +17,6 @@ call_count: dict[str, int] = {
     "get_user_posts": 0,
 }
 
-# Simulated current user (for `me` query)
-CURRENT_USER_ID = "1"
-
 
 def reset_call_count() -> None:
     """Reset the call counter."""
@@ -153,10 +150,6 @@ async def get_user(user_id: str) -> dict | None:
     finally:
         await db.close()
 
-
-async def get_current_user() -> dict | None:
-    """Get the currently authenticated user."""
-    return await get_user(CURRENT_USER_ID)
 
 
 async def get_posts() -> list[dict]:

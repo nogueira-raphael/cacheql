@@ -93,9 +93,15 @@ app.add_middleware(CacheControlMiddleware)
 
 
 def get_context_value(request: Request) -> dict[str, Any]:
+    auth = request.headers.get("Authorization", "")
+    current_user_id = None
+    if auth.startswith("Bearer user-"):
+        current_user_id = auth.removeprefix("Bearer user-")
+
     return {
         "request": request,
         "cache_service": cache_service,
+        "current_user_id": current_user_id,
     }
 
 
