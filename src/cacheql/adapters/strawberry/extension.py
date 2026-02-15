@@ -42,6 +42,16 @@ def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
         )
     """
 
+    def _extract_session_context(ctx: Any) -> dict[str, Any] | None:
+        keys = cache_service.config.session_context_keys
+        if not keys:
+            return None
+        context = getattr(ctx, "context", None)
+        if not isinstance(context, dict):
+            return None
+        extracted = {k: context[k] for k in keys if k in context}
+        return extracted or None
+
     class _CacheExtension(SchemaExtension):
         """Strawberry SchemaExtension for GraphQL response caching."""
 
@@ -112,10 +122,12 @@ def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
             if should_cache and not should_cache(ctx):
                 return
 
+            session_context = _extract_session_context(ctx)
             cached = await cache_service.get_cached_response(
                 operation_name=operation_name,
                 query=query,
                 variables=variables,
+                context=session_context,
             )
 
             if cached is not None:
@@ -152,11 +164,13 @@ def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
             )
 
             data = result.data if hasattr(result, "data") else result
+            session_context = _extract_session_context(ctx)
             await cache_service.cache_response(
                 operation_name=operation_name,
                 query=query,
                 variables=variables,
                 response=data,
+                context=session_context,
             )
 
         async def _handle_mutation_invalidation(self) -> None:

@@ -36,6 +36,9 @@ class CacheConfig:
     # Invalidation
     auto_invalidate_on_mutation: bool = True
 
+    # Context-aware cache keys
+    session_context_keys: list[str] | None = None
+
     # Cache Control (Apollo-style) settings
     use_cache_control: bool = True
     default_max_age: int = 0  # Default maxAge in seconds (0 = no cache by default)

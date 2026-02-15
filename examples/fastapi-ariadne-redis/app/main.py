@@ -30,6 +30,7 @@ cache_config = CacheConfig(
     key_prefix="example",
     cache_queries=True,
     cache_mutations=False,
+    session_context_keys=["current_user_id"],
 )
 
 cache_backend = RedisCacheBackend(
