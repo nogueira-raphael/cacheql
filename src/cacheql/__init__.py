@@ -5,7 +5,8 @@ Apollo Server-style @cacheControl directives, query-level and
 field-level caching, multiple backends, and framework adapters
 for Ariadne and Strawberry.
 
-Example with @cacheControl directives:
+Example with Ariadne:
+    from ariadne import make_executable_schema
     from cacheql import (
         CacheService,
         CacheConfig,
@@ -13,7 +14,7 @@ Example with @cacheControl directives:
         DefaultKeyBuilder,
         JsonSerializer,
     )
-    from cacheql.adapters.ariadne import CacheExtension
+    from cacheql.adapters.ariadne import CachingGraphQL
 
     # Schema with @cacheControl directives
     type_defs = '''
@@ -36,6 +37,8 @@ Example with @cacheControl directives:
         }
     '''
 
+    schema = make_executable_schema(type_defs)
+
     # Create cache service
     config = CacheConfig(
         use_cache_control=True,
@@ -48,8 +51,8 @@ Example with @cacheControl directives:
         config=config,
     )
 
-    # Create extension with schema parsing
-    extension = CacheExtension(cache_service, schema=schema)
+    # Create ASGI app with caching
+    app = CachingGraphQL(schema, cache_service=cache_service)
 
 Dynamic cache hints in resolvers:
     from cacheql.hints import set_cache_hint, private_cache
