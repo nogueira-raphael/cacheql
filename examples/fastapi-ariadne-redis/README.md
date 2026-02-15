@@ -7,6 +7,7 @@ It follows the [Apollo Server caching semantics](https://www.apollographql.com/d
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Authentication (Fake Tokens)](#authentication-fake-tokens)
 - [Cache Control Directive](#cache-control-directive)
 - [Setting Cache Hints](#setting-cache-hints)
   - [Static Hints (Schema)](#static-hints-schema)
@@ -42,6 +43,30 @@ docker-compose down
 # To remove Redis data:
 docker-compose down -v
 ```
+
+---
+
+## Authentication (Fake Tokens)
+
+This example uses a simple fake token mechanism to simulate multiple users, which is useful for testing `PRIVATE` cache behavior.
+
+Send an `Authorization` header with the format `Bearer user-{id}`:
+
+```bash
+# As user 1 (Alice)
+curl -X POST http://localhost:8000/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer user-1" \
+  -d '{"query": "{ me { id name email } }"}'
+
+# As user 2 (Bob)
+curl -X POST http://localhost:8000/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer user-2" \
+  -d '{"query": "{ me { id name email } }"}'
+```
+
+Without the header, the `me` query returns `null`.
 
 ---
 
@@ -355,6 +380,8 @@ query {
 Response header: `Cache-Control: max-age=300, public`
 
 ### Private Cache (1 minute)
+
+Requires an `Authorization: Bearer user-{id}` header (see [Authentication](#authentication-fake-tokens)).
 
 ```graphql
 query {

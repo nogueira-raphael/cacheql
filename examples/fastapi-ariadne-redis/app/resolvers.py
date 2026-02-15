@@ -51,8 +51,12 @@ async def resolve_me(_, info):
     Get the current user.
 
     Cache hint is set via @cacheControl directive (60s, PRIVATE).
+    Requires "Authorization: Bearer user-{id}" header.
     """
-    return await db.get_current_user()
+    current_user_id = info.context.get("current_user_id")
+    if not current_user_id:
+        return None
+    return await db.get_user(current_user_id)
 
 
 @query.field("posts")

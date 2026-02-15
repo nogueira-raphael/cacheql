@@ -187,6 +187,73 @@ class TestCacheService:
         assert cached is None
 
     @pytest.mark.asyncio
+    async def test_different_context_different_cache(
+        self, cache_service: CacheService
+    ) -> None:
+        """Test that different context produces different cache entries."""
+        query = "query Me { me { id name } }"
+
+        # Cache response for user 1
+        await cache_service.cache_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            response={"data": {"me": {"id": "1", "name": "Alice"}}},
+            context={"current_user_id": "1"},
+        )
+
+        # Cache response for user 2
+        await cache_service.cache_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            response={"data": {"me": {"id": "2", "name": "Bob"}}},
+            context={"current_user_id": "2"},
+        )
+
+        # Each user gets their own cached response
+        cached1 = await cache_service.get_cached_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            context={"current_user_id": "1"},
+        )
+        cached2 = await cache_service.get_cached_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            context={"current_user_id": "2"},
+        )
+
+        assert cached1["data"]["me"]["name"] == "Alice"
+        assert cached2["data"]["me"]["name"] == "Bob"
+
+    @pytest.mark.asyncio
+    async def test_no_context_does_not_match_context(
+        self, cache_service: CacheService
+    ) -> None:
+        """Test that cache without context misses when context is given."""
+        query = "query Me { me { id name } }"
+
+        # Cache without context
+        await cache_service.cache_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            response={"data": {"me": {"id": "1", "name": "Alice"}}},
+        )
+
+        # Lookup with context should miss
+        cached = await cache_service.get_cached_response(
+            operation_name="Me",
+            query=query,
+            variables=None,
+            context={"current_user_id": "1"},
+        )
+
+        assert cached is None
+
+    @pytest.mark.asyncio
     async def test_disabled_cache(self) -> None:
         """Test that disabled cache always returns None."""
         config = CacheConfig(enabled=False)

@@ -30,6 +30,7 @@ cache_config = CacheConfig(
     key_prefix="example",
     cache_queries=True,
     cache_mutations=False,
+    session_context_keys=["current_user_id"],
 )
 
 cache_backend = RedisCacheBackend(
@@ -93,9 +94,15 @@ app.add_middleware(CacheControlMiddleware)
 
 
 def get_context_value(request: Request) -> dict[str, Any]:
+    auth = request.headers.get("Authorization", "")
+    current_user_id = None
+    if auth.startswith("Bearer user-"):
+        current_user_id = auth.removeprefix("Bearer user-")
+
     return {
         "request": request,
         "cache_service": cache_service,
+        "current_user_id": current_user_id,
     }
 
 

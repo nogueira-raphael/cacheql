@@ -45,6 +45,13 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
             default_max_age=cache_service.config.default_max_age,
         )
 
+    def _extract_session_context(self, context_value: Any) -> dict[str, Any] | None:
+        keys = self._cache_service.config.session_context_keys
+        if not keys or not isinstance(context_value, dict):
+            return None
+        ctx = {k: context_value[k] for k in keys if k in context_value}
+        return ctx or None
+
     def _log(self, message: str) -> None:
         if self._debug:
             print(f"[CACHE] {message}")
@@ -86,11 +93,17 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
                 query_document=query_document,
             )
 
+        # Resolve context before cache lookup so session keys are available
+        if context_value is None:
+            context_value = await self.get_context_for_request(request, data)
+
         # Try cache first
+        session_context = self._extract_session_context(context_value)
         cached = await self._cache_service.get_cached_response(
             operation_name=operation_name,
             query=query,
             variables=variables,
+            context=session_context,
         )
 
         if cached is not None:
@@ -118,6 +131,7 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
                     variables=variables,
                     response=response,
                     ttl=ttl,
+                    context=session_context,
                 )
                 self._log(f"Cached (TTL: {policy.max_age}s)")
 

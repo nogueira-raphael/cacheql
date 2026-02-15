@@ -1,7 +1,7 @@
 """Integration tests for Ariadne caching components."""
 
 from datetime import timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -96,6 +96,93 @@ class TestCachingGraphQLHTTPHandler:
         # Should skip cache check due to callback
         with pytest.raises(Exception):
             await handler.execute_graphql_query(request, data)
+
+
+class TestSessionContextIsolation:
+    """Tests that session_context_keys produce per-user cache entries.
+
+    In real Ariadne, execute_graphql_query is called with context_value=None.
+    The parent resolves context via get_context_for_request(). The handler
+    must resolve context BEFORE cache lookup so that session keys are
+    available for cache key generation.
+    """
+
+    @pytest.fixture
+    def ctx_cache_service(self) -> CacheService:
+        return CacheService(
+            backend=InMemoryCacheBackend(maxsize=100),
+            key_builder=DefaultKeyBuilder(),
+            serializer=JsonSerializer(),
+            config=CacheConfig(
+                default_ttl=timedelta(minutes=5),
+                default_max_age=300,
+                session_context_keys=["current_user_id"],
+            ),
+        )
+
+    @pytest.fixture
+    def ctx_handler(
+        self, ctx_cache_service: CacheService
+    ) -> CachingGraphQLHTTPHandler:
+        return CachingGraphQLHTTPHandler(cache_service=ctx_cache_service)
+
+    @pytest.mark.asyncio
+    async def test_different_users_get_different_cached_responses(
+        self, ctx_cache_service: CacheService, ctx_handler: CachingGraphQLHTTPHandler
+    ) -> None:
+        """context_value=None simulates real Ariadne flow where context
+        is resolved by get_context_for_request, not passed explicitly.
+
+        Pre-populate cache with per-user entries, then verify each user
+        gets their own cached response — not the other user's.
+        """
+        query = "query { me { id name } }"
+        user1_response = {"data": {"me": {"id": "1", "name": "Alice"}}}
+        user2_response = {"data": {"me": {"id": "2", "name": "Bob"}}}
+
+        # Pre-populate cache with user-specific entries
+        await ctx_cache_service.cache_response(
+            operation_name=None,
+            query=query,
+            variables=None,
+            response=user1_response,
+            context={"current_user_id": "1"},
+        )
+        await ctx_cache_service.cache_response(
+            operation_name=None,
+            query=query,
+            variables=None,
+            response=user2_response,
+            context={"current_user_id": "2"},
+        )
+
+        data = {"query": query}
+
+        # User 1: context_value=None → resolved via get_context_for_request
+        request1 = MagicMock()
+        request1.state = MagicMock()
+        ctx_handler.get_context_for_request = AsyncMock(
+            return_value={"current_user_id": "1"}
+        )
+
+        success1, result1 = await ctx_handler.execute_graphql_query(
+            request1, data, context_value=None
+        )
+        assert success1 is True
+        assert result1 == user1_response
+
+        # User 2: context_value=None → resolved via get_context_for_request
+        request2 = MagicMock()
+        request2.state = MagicMock()
+        ctx_handler.get_context_for_request = AsyncMock(
+            return_value={"current_user_id": "2"}
+        )
+
+        success2, result2 = await ctx_handler.execute_graphql_query(
+            request2, data, context_value=None
+        )
+        assert success2 is True
+        assert result2 == user2_response
 
 
 class TestCachingGraphQL:
