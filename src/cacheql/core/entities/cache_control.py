@@ -94,18 +94,6 @@ class CacheHint:
         """
         return self.merge_with(CacheHint(max_age=max_age, scope=scope))
 
-    def to_http_header(self) -> str | None:
-        """Generate HTTP Cache-Control header value.
-
-        Returns:
-            The Cache-Control header value, or None if not cacheable.
-        """
-        if self.max_age is None or self.max_age == 0:
-            return "no-store"
-
-        scope_str = "private" if self.scope == CacheScope.PRIVATE else "public"
-        return f"max-age={self.max_age}, {scope_str}"
-
     @classmethod
     def no_cache(cls) -> "CacheHint":
         """Create a hint that disables caching."""

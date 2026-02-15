@@ -1,7 +1,5 @@
 """Tests for cache control entities and services."""
 
-import pytest
-
 from cacheql.core.entities.cache_control import (
     CacheHint,
     CacheScope,
@@ -78,24 +76,6 @@ class TestCacheHint:
 
         restricted2 = hint.restrict(scope=CacheScope.PRIVATE)
         assert restricted2.scope == CacheScope.PRIVATE
-
-    def test_to_http_header(self) -> None:
-        """Test HTTP header generation."""
-        # Cacheable with public scope
-        hint = CacheHint(max_age=300, scope=CacheScope.PUBLIC)
-        assert hint.to_http_header() == "max-age=300, public"
-
-        # Cacheable with private scope
-        hint = CacheHint(max_age=60, scope=CacheScope.PRIVATE)
-        assert hint.to_http_header() == "max-age=60, private"
-
-        # Not cacheable
-        hint = CacheHint(max_age=0)
-        assert hint.to_http_header() == "no-store"
-
-        # No max_age set
-        hint = CacheHint()
-        assert hint.to_http_header() == "no-store"
 
     def test_no_cache_factory(self) -> None:
         """Test no_cache factory method."""
