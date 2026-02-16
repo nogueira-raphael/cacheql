@@ -28,6 +28,7 @@ class CachingGraphQL(GraphQL):
         schema: Any,
         cache_service: CacheService,
         should_cache: Callable[[dict[str, Any]], bool] | None = None,
+        session_id: Callable[[Any], str | None] | None = None,
         set_http_headers: bool = True,
         **kwargs: Any,
     ) -> None:
@@ -37,6 +38,7 @@ class CachingGraphQL(GraphQL):
             cache_service=cache_service,
             schema=schema,
             should_cache=should_cache,
+            session_id=session_id,
             set_http_headers=set_http_headers,
             debug=debug,
         )

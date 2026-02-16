@@ -1,15 +1,18 @@
 """Caching HTTP handler for Ariadne GraphQL."""
 
+import logging
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
 from ariadne.asgi.handlers import GraphQLHTTPHandler
 
-from cacheql.core.entities.cache_control import ResponseCachePolicy
+from cacheql.core.entities.cache_control import CacheScope, ResponseCachePolicy
 from cacheql.core.services.cache_control_calculator import CacheControlCalculator
 from cacheql.core.services.cache_service import CacheService
 from cacheql.core.services.directive_parser import DirectiveParser, SchemaDirectives
+
+logger = logging.getLogger(__name__)
 
 
 class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
@@ -17,6 +20,11 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
 
     Intercepts query execution to check cache first, then caches responses
     using TTL values from @cacheControl directives.
+
+    Supports scope-aware caching via the ``session_id`` callback:
+    - PUBLIC responses are cached with a shared key (no session context).
+    - PRIVATE responses are cached per-user using the session_id.
+    - PRIVATE responses without a session_id are not cached.
     """
 
     def __init__(
@@ -24,12 +32,14 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
         cache_service: CacheService,
         schema: Any = None,
         should_cache: Callable[[dict[str, Any]], bool] | None = None,
+        session_id: Callable[[Any], str | None] | None = None,
         set_http_headers: bool = True,
         debug: bool = False,
     ) -> None:
         super().__init__()
         self._cache_service = cache_service
         self._should_cache = should_cache
+        self._session_id = session_id
         self._set_http_headers = set_http_headers
         self._debug = debug
 
@@ -45,12 +55,10 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
             default_max_age=cache_service.config.default_max_age,
         )
 
-    def _extract_session_context(self, context_value: Any) -> dict[str, Any] | None:
-        keys = self._cache_service.config.session_context_keys
-        if not keys or not isinstance(context_value, dict):
+    def _get_session_id(self, context_value: Any) -> str | None:
+        if self._session_id is None:
             return None
-        ctx = {k: context_value[k] for k in keys if k in context_value}
-        return ctx or None
+        return self._session_id(context_value)
 
     def _log(self, message: str) -> None:
         if self._debug:
@@ -93,21 +101,34 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
                 query_document=query_document,
             )
 
-        # Resolve context before cache lookup so session keys are available
+        # Resolve context before cache lookup so session_id is available
         if context_value is None:
             context_value = await self.get_context_for_request(request, data)
 
-        # Try cache first
-        session_context = self._extract_session_context(context_value)
+        sid = self._get_session_id(context_value)
+
+        # Dual lookup: try private key first (if sid), then public key
+        if sid is not None:
+            cached = await self._cache_service.get_cached_response(
+                operation_name=operation_name,
+                query=query,
+                variables=variables,
+                context={"session_id": sid},
+            )
+            if cached is not None:
+                self._log("HIT (private)")
+                self._mark_cache_hit(request)
+                return True, cached
+
+        # Try public key
         cached = await self._cache_service.get_cached_response(
             operation_name=operation_name,
             query=query,
             variables=variables,
-            context=session_context,
+            context=None,
         )
-
         if cached is not None:
-            self._log("HIT")
+            self._log("HIT (public)")
             self._mark_cache_hit(request)
             return True, cached
 
@@ -118,22 +139,40 @@ class CachingGraphQLHTTPHandler(GraphQLHTTPHandler):
             request, data, context_value=context_value, query_document=query_document
         )
 
-        # Cache successful responses
+        # Cache successful responses (scope-aware)
         if success and isinstance(response, dict) and not response.get("errors"):
             response_data = response.get("data")
             policy = self._calculator.calculate_policy(data=response_data)
 
             if policy.is_cacheable:
                 ttl = timedelta(seconds=policy.max_age)
-                await self._cache_service.cache_response(
-                    operation_name=operation_name,
-                    query=query,
-                    variables=variables,
-                    response=response,
-                    ttl=ttl,
-                    context=session_context,
-                )
-                self._log(f"Cached (TTL: {policy.max_age}s)")
+
+                if policy.scope == CacheScope.PRIVATE:
+                    if sid is not None:
+                        await self._cache_service.cache_response(
+                            operation_name=operation_name,
+                            query=query,
+                            variables=variables,
+                            response=response,
+                            ttl=ttl,
+                            context={"session_id": sid},
+                        )
+                        self._log(f"Cached private (TTL: {policy.max_age}s)")
+                    else:
+                        logger.warning(
+                            "PRIVATE response not cached: no session_id available"
+                        )
+                        self._log("Skipping cache: PRIVATE scope without session_id")
+                else:
+                    await self._cache_service.cache_response(
+                        operation_name=operation_name,
+                        query=query,
+                        variables=variables,
+                        response=response,
+                        ttl=ttl,
+                        context=None,
+                    )
+                    self._log(f"Cached public (TTL: {policy.max_age}s)")
 
             if self._set_http_headers:
                 self._set_cache_headers(request, policy)

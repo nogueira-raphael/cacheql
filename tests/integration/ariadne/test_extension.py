@@ -70,7 +70,7 @@ class TestCachingGraphQLHTTPHandler:
         handler._schema = None
 
         # Can't fully test without schema, but verify it attempts execution
-        with pytest.raises(Exception):
+        with pytest.raises((TypeError, AttributeError)):
             await handler.execute_graphql_query(request, data)
 
     @pytest.mark.asyncio
@@ -94,18 +94,12 @@ class TestCachingGraphQLHTTPHandler:
         data = {"query": query}
 
         # Should skip cache check due to callback
-        with pytest.raises(Exception):
+        with pytest.raises((TypeError, AttributeError)):
             await handler.execute_graphql_query(request, data)
 
 
-class TestSessionContextIsolation:
-    """Tests that session_context_keys produce per-user cache entries.
-
-    In real Ariadne, execute_graphql_query is called with context_value=None.
-    The parent resolves context via get_context_for_request(). The handler
-    must resolve context BEFORE cache lookup so that session keys are
-    available for cache key generation.
-    """
+class TestScopeAwareCaching:
+    """Tests that session_id callback produces scope-aware cache entries."""
 
     @pytest.fixture
     def ctx_cache_service(self) -> CacheService:
@@ -116,26 +110,19 @@ class TestSessionContextIsolation:
             config=CacheConfig(
                 default_ttl=timedelta(minutes=5),
                 default_max_age=300,
-                session_context_keys=["current_user_id"],
             ),
         )
 
-    @pytest.fixture
-    def ctx_handler(
-        self, ctx_cache_service: CacheService
-    ) -> CachingGraphQLHTTPHandler:
-        return CachingGraphQLHTTPHandler(cache_service=ctx_cache_service)
-
     @pytest.mark.asyncio
-    async def test_different_users_get_different_cached_responses(
-        self, ctx_cache_service: CacheService, ctx_handler: CachingGraphQLHTTPHandler
+    async def test_private_query_cached_per_user(
+        self, ctx_cache_service: CacheService
     ) -> None:
-        """context_value=None simulates real Ariadne flow where context
-        is resolved by get_context_for_request, not passed explicitly.
+        """Private cache entries are found via dual lookup per-user."""
+        handler = CachingGraphQLHTTPHandler(
+            cache_service=ctx_cache_service,
+            session_id=lambda ctx: ctx.get("current_user_id"),
+        )
 
-        Pre-populate cache with per-user entries, then verify each user
-        gets their own cached response — not the other user's.
-        """
         query = "query { me { id name } }"
         user1_response = {"data": {"me": {"id": "1", "name": "Alice"}}}
         user2_response = {"data": {"me": {"id": "2", "name": "Bob"}}}
@@ -146,43 +133,93 @@ class TestSessionContextIsolation:
             query=query,
             variables=None,
             response=user1_response,
-            context={"current_user_id": "1"},
+            context={"session_id": "1"},
         )
         await ctx_cache_service.cache_response(
             operation_name=None,
             query=query,
             variables=None,
             response=user2_response,
-            context={"current_user_id": "2"},
+            context={"session_id": "2"},
         )
 
         data = {"query": query}
 
-        # User 1: context_value=None → resolved via get_context_for_request
+        # User 1 gets their own cached response
         request1 = MagicMock()
         request1.state = MagicMock()
-        ctx_handler.get_context_for_request = AsyncMock(
+        handler.get_context_for_request = AsyncMock(
             return_value={"current_user_id": "1"}
         )
 
-        success1, result1 = await ctx_handler.execute_graphql_query(
+        success1, result1 = await handler.execute_graphql_query(
             request1, data, context_value=None
         )
         assert success1 is True
         assert result1 == user1_response
 
-        # User 2: context_value=None → resolved via get_context_for_request
+        # User 2 gets their own cached response
         request2 = MagicMock()
         request2.state = MagicMock()
-        ctx_handler.get_context_for_request = AsyncMock(
+        handler.get_context_for_request = AsyncMock(
             return_value={"current_user_id": "2"}
         )
 
-        success2, result2 = await ctx_handler.execute_graphql_query(
+        success2, result2 = await handler.execute_graphql_query(
             request2, data, context_value=None
         )
         assert success2 is True
         assert result2 == user2_response
+
+    @pytest.mark.asyncio
+    async def test_public_query_shared_across_users(
+        self, ctx_cache_service: CacheService
+    ) -> None:
+        """Public cache entries are shared across all users."""
+        handler = CachingGraphQLHTTPHandler(
+            cache_service=ctx_cache_service,
+            session_id=lambda ctx: ctx.get("current_user_id"),
+        )
+
+        query = "query { users { id name } }"
+        shared_response = {"data": {"users": [{"id": "1", "name": "Alice"}]}}
+
+        # Pre-populate cache with a public entry (no context)
+        await ctx_cache_service.cache_response(
+            operation_name=None,
+            query=query,
+            variables=None,
+            response=shared_response,
+            context=None,
+        )
+
+        data = {"query": query}
+
+        # User 1 gets the shared response (private miss → public hit)
+        request1 = MagicMock()
+        request1.state = MagicMock()
+        handler.get_context_for_request = AsyncMock(
+            return_value={"current_user_id": "1"}
+        )
+
+        success1, result1 = await handler.execute_graphql_query(
+            request1, data, context_value=None
+        )
+        assert success1 is True
+        assert result1 == shared_response
+
+        # User 2 also gets the same shared response
+        request2 = MagicMock()
+        request2.state = MagicMock()
+        handler.get_context_for_request = AsyncMock(
+            return_value={"current_user_id": "2"}
+        )
+
+        success2, result2 = await handler.execute_graphql_query(
+            request2, data, context_value=None
+        )
+        assert success2 is True
+        assert result2 == shared_response
 
 
 class TestCachingGraphQL:
@@ -215,6 +252,23 @@ class TestCachingGraphQL:
         )
 
         assert app._caching_handler._should_cache is should_cache
+
+    def test_with_session_id(self, cache_service: CacheService) -> None:
+        from ariadne import make_executable_schema
+
+        type_defs = "type Query { hello: String }"
+        schema = make_executable_schema(type_defs)
+
+        def get_session_id(ctx: dict) -> str | None:
+            return ctx.get("user_id")
+
+        app = CachingGraphQL(
+            schema,
+            cache_service=cache_service,
+            session_id=get_session_id,
+        )
+
+        assert app._caching_handler._session_id is get_session_id
 
     def test_passes_kwargs_to_parent(self, cache_service: CacheService) -> None:
         from ariadne import make_executable_schema
