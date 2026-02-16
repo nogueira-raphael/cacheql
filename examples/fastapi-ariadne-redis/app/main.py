@@ -30,7 +30,6 @@ cache_config = CacheConfig(
     key_prefix="example",
     cache_queries=True,
     cache_mutations=False,
-    session_context_keys=["current_user_id"],
 )
 
 cache_backend = RedisCacheBackend(
@@ -112,10 +111,15 @@ def should_cache(data: dict[str, Any]) -> bool:
     return "dbStats" not in query
 
 
+def get_session_id(context_value: dict) -> str | None:
+    return context_value.get("current_user_id")
+
+
 graphql_app = CachingGraphQL(
     schema,
     cache_service=cache_service,
     should_cache=should_cache,
+    session_id=get_session_id,
     debug=DEBUG,
     context_value=get_context_value,
     execute_get_queries=True,

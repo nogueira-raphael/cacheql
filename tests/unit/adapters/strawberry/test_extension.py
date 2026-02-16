@@ -595,9 +595,8 @@ class TestOnOperation:
             mock_check.assert_awaited_once()
             mock_cache.assert_awaited_once()
 
-    async def test_check_cache_passes_session_context(self):
-        config = CacheConfig(session_context_keys=["current_user_id"])
-        svc = _make_cache_service(config=config)
+    async def test_always_passes_none_context_on_check(self):
+        svc = _make_cache_service()
         ctx = _make_context(context={"current_user_id": "42"})
         ext = _make_ext(svc, ctx)
 
@@ -607,12 +606,11 @@ class TestOnOperation:
             operation_name="GetUser",
             query=ctx.query,
             variables={"id": "1"},
-            context={"current_user_id": "42"},
+            context=None,
         )
 
-    async def test_cache_response_passes_session_context(self):
-        config = CacheConfig(session_context_keys=["current_user_id"])
-        svc = _make_cache_service(config=config)
+    async def test_always_passes_none_context_on_store(self):
+        svc = _make_cache_service()
         result = MagicMock()
         result.errors = None
         result.data = {"user": {"id": "1"}}
@@ -632,51 +630,6 @@ class TestOnOperation:
             query="query GetUser { user { id } }",
             variables={"id": "1"},
             response={"user": {"id": "1"}},
-            context={"current_user_id": "42"},
-        )
-
-    async def test_no_session_context_keys_passes_none(self):
-        svc = _make_cache_service()  # default config has no session_context_keys
-        ctx = _make_context(context={"current_user_id": "42"})
-        ext = _make_ext(svc, ctx)
-
-        await ext._check_cache()
-
-        svc.get_cached_response.assert_awaited_once_with(
-            operation_name="GetUser",
-            query=ctx.query,
-            variables={"id": "1"},
-            context=None,
-        )
-
-    async def test_context_not_dict_passes_none(self):
-        config = CacheConfig(session_context_keys=["current_user_id"])
-        svc = _make_cache_service(config=config)
-        ctx = _make_context()
-        ctx.context = "not-a-dict"
-        ext = _make_ext(svc, ctx)
-
-        await ext._check_cache()
-
-        svc.get_cached_response.assert_awaited_once_with(
-            operation_name="GetUser",
-            query=ctx.query,
-            variables={"id": "1"},
-            context=None,
-        )
-
-    async def test_no_matching_keys_passes_none(self):
-        config = CacheConfig(session_context_keys=["current_user_id"])
-        svc = _make_cache_service(config=config)
-        ctx = _make_context(context={"other_key": "value"})
-        ext = _make_ext(svc, ctx)
-
-        await ext._check_cache()
-
-        svc.get_cached_response.assert_awaited_once_with(
-            operation_name="GetUser",
-            query=ctx.query,
-            variables={"id": "1"},
             context=None,
         )
 

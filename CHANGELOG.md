@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Scope-aware caching with `session_id` callback in Ariadne adapter (Apollo-style)
+- Dual cache lookup: private key first (per-user), then public key (shared)
+- PUBLIC responses cached with shared key; PRIVATE responses cached per-user; PRIVATE without session_id skipped
+
+### Changed
+- `session_id` callback replaces `session_context_keys` for session identity (moved from config to adapter layer)
+- Strawberry extension now uses public-only caching (`context=None`) until scope support is added
+
+### Removed
+- `session_context_keys` field from `CacheConfig` (use `session_id` callback on `CachingGraphQL`/`CachingGraphQLHTTPHandler` instead)
+
 ## [0.0.1a2] - 2026-02-15
 
 ### Added
