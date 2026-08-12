@@ -153,11 +153,13 @@ def CacheExtension(  # noqa: N802 - PascalCase intentional for class factory
             )
 
             data = result.data if hasattr(result, "data") else result
+            tags = self._extract_tags_from_response(data)
             await cache_service.cache_response(
                 operation_name=operation_name,
                 query=query,
                 variables=variables,
                 response=data,
+                tags=tags,
                 context=None,
             )
 
