@@ -2,8 +2,6 @@
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from cacheql.core.entities.cache_control import CacheScope
 from cacheql.core.services.cache_control_calculator import CacheControlContext
 from cacheql.hints import (

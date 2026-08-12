@@ -1,4 +1,13 @@
-"""Strawberry GraphQL schema with cache hints."""
+"""Strawberry GraphQL schema with cache hints.
+
+Note: the Strawberry adapter doesn't yet calculate a cache-control
+policy from these hints or from @cacheControl directives (unlike the
+Ariadne adapter) - see the "Dynamic Cache Hints" section of the
+project README. The calls below document the intended API and keep
+this example symmetric with the Ariadne one; today they don't change
+caching behavior on the Strawberry side. Mutations still invalidate
+cache entries by tag as shown.
+"""
 
 
 import strawberry
