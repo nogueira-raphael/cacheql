@@ -27,11 +27,13 @@ def _make_handler(
 
     handler = object.__new__(CachingGraphQLHTTPHandler)
     handler._cache_service = svc
+    handler._schema = None
     handler._should_cache = None
     handler._session_id = session_id
     handler._set_http_headers = True
     handler._debug = False
     handler._schema_directives = None
+    handler._type_info_cache = {}
 
     # Mock calculator
     handler._calculator = MagicMock()
