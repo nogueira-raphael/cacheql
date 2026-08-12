@@ -74,3 +74,14 @@ class ICacheBackend(Protocol):
             Number of keys deleted.
         """
         ...
+
+    async def keys(self, pattern: str) -> list[str]:
+        """List keys matching a pattern, without deleting them.
+
+        Args:
+            pattern: Glob-style pattern to match keys.
+
+        Returns:
+            Matching keys.
+        """
+        ...

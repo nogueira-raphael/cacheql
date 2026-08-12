@@ -106,6 +106,31 @@ class RedisCacheBackend:
         """
         return await self._delete_by_pattern(pattern)
 
+    async def keys(self, pattern: str) -> list[str]:
+        """List keys matching a pattern, without deleting them.
+
+        Uses SCAN instead of KEYS for production safety.
+
+        Args:
+            pattern: Redis glob pattern.
+
+        Returns:
+            Matching keys, with the configured prefix stripped so callers
+            see the same key shape they passed to ``set()``.
+        """
+        matched: list[str] = []
+        cursor = 0
+
+        while True:
+            cursor, keys = await self._redis.scan(cursor, match=pattern, count=100)
+            matched.extend(
+                key.decode() if isinstance(key, bytes) else key for key in keys
+            )
+            if cursor == 0:
+                break
+
+        return matched
+
     async def _delete_by_pattern(self, pattern: str) -> int:
         """Delete keys matching a pattern using SCAN.
 
