@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any, TypeVar
 
 from cacheql.core.services.cache_service import CacheService
+from cacheql.core.services.tag_index import build_tag_index_key
 from cacheql.infrastructure.key_builders.default import DefaultKeyBuilder
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -77,7 +78,7 @@ def cached_resolver(
             if resolved_tags:
                 for tag in resolved_tags:
                     prefix = _cache_service.config.key_prefix
-                    tag_key = f"{prefix}:tag:{tag}:{cache_key}"
+                    tag_key = build_tag_index_key(prefix, tag, cache_key)
                     await _cache_service._backend.set(
                         tag_key, cache_key.encode(), effective_ttl
                     )

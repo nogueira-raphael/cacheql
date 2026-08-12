@@ -120,11 +120,14 @@ class TestInvalidatesDecorator:
 
     @pytest.mark.asyncio
     async def test_invalidates_tags(self, cache_service: CacheService) -> None:
-        """Test that @invalidates clears cache entries."""
-        # First, cache some data
+        """Test that @invalidates actually removes the tagged cache entry."""
+        call_count = 0
+
         @cached(tags=["User"])
         async def get_user(id: str) -> dict:
-            return {"id": id, "version": 1}
+            nonlocal call_count
+            call_count += 1
+            return {"id": id, "version": call_count}
 
         @invalidates(tags=["User"])
         async def update_user(id: str, data: dict) -> dict:
@@ -133,13 +136,49 @@ class TestInvalidatesDecorator:
         # Cache the user
         result1 = await get_user(id="123")
         assert result1["version"] == 1
+        assert (await get_user(id="123"))["version"] == 1  # still cached
 
         # Update the user (invalidates cache)
         await update_user(id="123", data={"name": "Alice"})
 
-        # Note: The cache for get_user should now be invalidated
-        # But since we're using pattern-based invalidation,
-        # the exact behavior depends on tag indexing
+        # The cached entry is gone, so the function runs again
+        result2 = await get_user(id="123")
+        assert result2["version"] == 2
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_invalidates_leaves_other_tags_untouched(
+        self, cache_service: CacheService
+    ) -> None:
+        """Test that invalidating one tag doesn't affect entries under another."""
+        user_calls = 0
+        post_calls = 0
+
+        @cached(tags=["User"])
+        async def get_user(id: str) -> dict:
+            nonlocal user_calls
+            user_calls += 1
+            return {"id": id}
+
+        @cached(tags=["Post"])
+        async def get_post(id: str) -> dict:
+            nonlocal post_calls
+            post_calls += 1
+            return {"id": id}
+
+        @invalidates(tags=["User"])
+        async def update_user(id: str) -> None:
+            return None
+
+        await get_user(id="1")
+        await get_post(id="1")
+        await update_user(id="1")
+
+        await get_user(id="1")  # re-fetched, tag was invalidated
+        await get_post(id="1")  # still cached, different tag
+
+        assert user_calls == 2
+        assert post_calls == 1
 
     @pytest.mark.asyncio
     async def test_invalidates_with_interpolation(

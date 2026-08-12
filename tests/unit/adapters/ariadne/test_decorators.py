@@ -164,8 +164,8 @@ class TestCachedResolver:
         # Second call should be for "User" tag, third for "User:42"
         tag_key_2 = tag_calls[1][0][0]
         tag_key_3 = tag_calls[2][0][0]
-        assert ":tag:User:" in tag_key_2
-        assert ":tag:User:42:" in tag_key_3
+        assert ":tag:User\x1e" in tag_key_2
+        assert ":tag:User:42\x1e" in tag_key_3
 
     async def test_custom_key_as_string(self):
         svc = _make_cache_service(cached_data=None)
