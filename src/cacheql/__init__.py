@@ -97,7 +97,13 @@ from cacheql.infrastructure import (
     JsonSerializer,
 )
 
-__version__ = "0.1.0"
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("cacheql")
+except PackageNotFoundError:  # pragma: no cover - package not installed
+    __version__ = "0.0.0"
 
 __all__ = [
     # Version
