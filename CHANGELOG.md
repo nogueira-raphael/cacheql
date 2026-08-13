@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1a3] - 2026-08-13
+
 ### Added
 - Scope-aware caching with `session_id` callback in Ariadne adapter (Apollo-style)
 - Dual cache lookup: private key first (per-user), then public key (shared)
