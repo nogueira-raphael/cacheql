@@ -52,10 +52,16 @@ class TestSimpleTagInvalidation:
         assert len(backend) > 0
 
         # Invalidate
-        await service.invalidate(["User"])
+        count = await service.invalidate(["User"])
+        assert count == 1
 
-        # Entry should be removed (tag mapping key)
-        # Note: The actual response key may still exist depending on implementation
+        # The actual cached response is gone, not just the tag index
+        cached = await service.get_cached_response(
+            operation_name="GetUser",
+            query="query { user { id } }",
+            variables=None,
+        )
+        assert cached is None
 
     async def test_cache_entries_with_tag_removed(self):
         """Should remove cache entries that have the invalidated tag."""
@@ -82,9 +88,18 @@ class TestSimpleTagInvalidation:
 
         # Invalidate User tag
         count = await service.invalidate(["User"])
+        assert count == 2
 
-        # Some entries should be removed
-        assert count >= 0  # Pattern matching behavior
+        assert await service.get_cached_response(
+            operation_name="GetUser1",
+            query="query { user(id: 1) { id } }",
+            variables={"id": "1"},
+        ) is None
+        assert await service.get_cached_response(
+            operation_name="GetUser2",
+            query="query { user(id: 2) { id } }",
+            variables={"id": "2"},
+        ) is None
 
     async def test_cache_entries_without_tag_remain(self):
         """Should keep cache entries that don't have the invalidated tag."""
@@ -147,8 +162,8 @@ class TestMultipleTagInvalidation:
         # Invalidate both tags
         count = await service.invalidate(["User", "Post"])
 
-        # Both should be affected
-        assert count >= 0
+        assert count == 2
+        assert len(backend) == 0
 
     async def test_verify_all_matching_entries_removed(self):
         """Should remove all entries matching any of the tags."""
@@ -288,13 +303,20 @@ class TestInvalidationEdgeCases:
 
 
 class TestPatternMatching:
-    """Tests for pattern-based invalidation."""
+    """Tests for tag matching: exact, not prefix-based.
 
-    async def test_wildcard_pattern_matching(self):
-        """Should match keys using wildcard patterns."""
+    Tags are matched exactly, not as a colon-delimited hierarchy - a
+    cache entry tagged "User:1:posts" is unaffected by invalidating
+    "User:1", and invalidating "User:1" never touches an entry tagged
+    "User:10". Tag families like this need to be tagged explicitly with
+    every level that should be invalidatable, e.g.
+    tags=["User", "User:1", "User:1:posts"].
+    """
+
+    async def test_exact_tag_match_only(self):
+        """Invalidating a tag should not affect similarly-prefixed tags."""
         service, backend = create_cache_service(key_prefix="app")
 
-        # Cache entries with pattern-able tags
         await service.cache_response(
             operation_name="GetUser1",
             query="query { user(id: 1) }",
@@ -303,24 +325,33 @@ class TestPatternMatching:
             tags=["User:1"],
         )
         await service.cache_response(
-            operation_name="GetUser2",
-            query="query { user(id: 2) }",
-            variables={"id": "2"},
-            response={"data": {"user": {"id": "2"}}},
-            tags=["User:2"],
+            operation_name="GetUser10",
+            query="query { user(id: 10) }",
+            variables={"id": "10"},
+            response={"data": {"user": {"id": "10"}}},
+            tags=["User:10"],
         )
 
-        initial_count = len(backend)
-        assert initial_count > 0
+        # "User:1" must not glob-match the unrelated "User:10" tag
+        count = await service.invalidate(["User:1"])
+        assert count == 1
 
-        # Invalidate all User:* entries via the User tag
-        await service.invalidate(["User"])
+        assert await service.get_cached_response(
+            operation_name="GetUser1",
+            query="query { user(id: 1) }",
+            variables={"id": "1"},
+        ) is None
+        cached_10 = await service.get_cached_response(
+            operation_name="GetUser10",
+            query="query { user(id: 10) }",
+            variables={"id": "10"},
+        )
+        assert cached_10 is not None
 
-    async def test_prefix_matching(self):
-        """Should support prefix-based invalidation."""
+    async def test_nested_tag_hierarchy_needs_explicit_tags(self):
+        """A parent tag only invalidates entries tagged with it directly."""
         service, backend = create_cache_service()
 
-        # Cache entries with hierarchical tags
         await service.cache_response(
             operation_name="GetUserPosts",
             query="query { userPosts }",
@@ -329,11 +360,21 @@ class TestPatternMatching:
             tags=["User:1:posts"],
         )
 
-        # Invalidate using prefix
+        # "User:1" was never used as a tag on this entry, only
+        # "User:1:posts" was - it must not be invalidated.
         count = await service.invalidate(["User:1"])
+        assert count == 0
 
-        # Should match via pattern
-        assert count >= 0
+        cached = await service.get_cached_response(
+            operation_name="GetUserPosts",
+            query="query { userPosts }",
+            variables=None,
+        )
+        assert cached is not None
+
+        # Invalidating the exact tag that was used does remove it.
+        count = await service.invalidate(["User:1:posts"])
+        assert count == 1
 
 
 class TestCacheServiceMethods:

@@ -202,6 +202,13 @@ Cache-Control: no-store  (when maxAge is 0)
 
 ## Dynamic Cache Hints in Resolvers
 
+> **Adapter support:** currently implemented for the **Ariadne** adapter
+> (`CachingGraphQL`/`CachingGraphQLHTTPHandler`). The Strawberry
+> `CacheExtension` does not yet calculate a policy from `@cacheControl`
+> directives or dynamic hints - it caches whole responses using
+> `default_ttl` regardless of scope. Type-aware caching for Strawberry
+> is tracked as follow-up work.
+
 Set cache hints dynamically based on runtime conditions:
 
 ```python
@@ -334,6 +341,19 @@ stats = cache_service.stats
 await cache_service.invalidate(["User"])
 await cache_service.invalidate(["User:123"])
 ```
+
+`CachingGraphQL`/`CachingGraphQLHTTPHandler` (Ariadne) and the Strawberry
+`CacheExtension` automatically tag cached responses with `TypeName` and
+`TypeName:id` for every object that has an `id` field, derived from the
+schema for Ariadne and from `__typename` in the response for Strawberry
+(request `__typename` in your queries if you rely on this with
+Strawberry). Calling `@cached(tags=[...])` or `invalidate([...])` with
+those same type names invalidates the matching entries - no need to
+pass `tags=` explicitly when caching whole GraphQL responses.
+
+Mutations also auto-invalidate: when `auto_invalidate_on_mutation` is
+enabled (the default), a successful mutation response has its tags
+extracted the same way and used to invalidate affected entries.
 
 ### Clear All
 

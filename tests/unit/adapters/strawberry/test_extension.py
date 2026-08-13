@@ -386,6 +386,7 @@ class TestCacheResponse:
             query="query GetUser { user { id } }",
             variables={"id": "1"},
             response={"user": {"id": "1"}},
+            tags=[],
             context=None,
         )
 
@@ -630,6 +631,7 @@ class TestOnOperation:
             query="query GetUser { user { id } }",
             variables={"id": "1"},
             response={"user": {"id": "1"}},
+            tags=[],
             context=None,
         )
 

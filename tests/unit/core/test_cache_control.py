@@ -256,11 +256,12 @@ class TestCacheControlCalculator:
 
         # Create context to simulate Query root type
         context = CacheControlContext(schema_directives=directives)
-        policy = calculator.calculate_policy(data, context=context)
+        calculator.calculate_policy(data, context=context)
 
-        # Note: The calculator walks the data, but field hints are matched
-        # based on type.field, so we need __typename or type_info
-        # This test mainly verifies no errors occur
+        # Note: without __typename in the data or an explicit type_info
+        # mapping, the walk can't resolve which type each field belongs
+        # to. This test mainly verifies no errors occur; see
+        # test_type_info.py for type resolution via the query AST.
 
     def test_calculate_policy_with_resolver_hints(self) -> None:
         """Test that resolver hints are included."""

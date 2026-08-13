@@ -8,6 +8,7 @@ from cacheql.core.entities.cache_entry import CacheEntry
 from cacheql.core.interfaces.cache_backend import ICacheBackend
 from cacheql.core.interfaces.key_builder import IKeyBuilder
 from cacheql.core.interfaces.serializer import ISerializer
+from cacheql.core.services.tag_index import build_tag_index_key, tag_index_pattern
 
 
 class CacheService:
@@ -158,21 +159,32 @@ class CacheService:
     async def invalidate(self, tags: list[str]) -> int:
         """Invalidate cached entries by tags.
 
+        Each tag was previously indexed to the cache keys it applies to
+        (see ``_store_tag_mappings``). This resolves that index back to
+        the actual cached entries and removes both.
+
         Args:
             tags: List of tags to invalidate.
 
         Returns:
-            Number of entries invalidated.
+            Number of distinct cache entries invalidated.
         """
-        count = 0
-        for tag in tags:
-            # Delete tag index and get associated keys
-            pattern = f"{self._config.key_prefix}:tag:{tag}:*"
-            count += await self._backend.delete_pattern(pattern)
+        invalidated_keys: set[str] = set()
 
-            # Also try direct pattern matching
-            pattern = f"{self._config.key_prefix}:*{tag}*"
-            count += await self._backend.delete_pattern(pattern)
+        for tag in tags:
+            index_pattern = tag_index_pattern(self._config.key_prefix, tag)
+            index_keys = await self._backend.keys(index_pattern)
+
+            for index_key in index_keys:
+                target = await self._backend.get(index_key)
+                if target is not None:
+                    invalidated_keys.add(target.decode())
+                await self._backend.delete(index_key)
+
+        count = 0
+        for key in invalidated_keys:
+            if await self._backend.delete(key):
+                count += 1
 
         return count
 
@@ -201,6 +213,6 @@ class CacheService:
             tags: Tags to associate with the key.
         """
         for tag in tags:
-            tag_key = f"{self._config.key_prefix}:tag:{tag}:{key}"
+            tag_key = build_tag_index_key(self._config.key_prefix, tag, key)
             # Store with same TTL as the main entry
             await self._backend.set(tag_key, key.encode(), self._config.default_ttl)

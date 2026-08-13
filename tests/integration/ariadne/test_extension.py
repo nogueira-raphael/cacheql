@@ -283,3 +283,224 @@ class TestCachingGraphQL:
         )
 
         assert app._caching_handler._debug is True
+
+
+class TestCacheControlWithRealSchema:
+    """End-to-end tests against a real Ariadne schema + resolvers.
+
+    These cover the bugs fixed alongside the scope-aware caching work:
+    type-level @cacheControl resolution without __typename, dynamic
+    hints from resolvers, automatic tagging of cached responses, and
+    tag-based auto-invalidation on mutations.
+    """
+
+    def _build(self, type_defs: str, query_type=None, mutation_type=None):
+        from ariadne import make_executable_schema
+
+        from cacheql import get_cache_control_directive_sdl
+
+        schema = make_executable_schema(
+            get_cache_control_directive_sdl() + type_defs,
+            *(t for t in (query_type, mutation_type) if t is not None),
+        )
+        return schema
+
+    def _fake_request(self):
+        class RequestState:
+            pass
+
+        class FakeRequest:
+            state = RequestState()
+
+        return FakeRequest()
+
+    @pytest.mark.asyncio
+    async def test_type_level_directive_applies_without_typename(self) -> None:
+        from ariadne import QueryType
+
+        query_type = QueryType()
+
+        @query_type.field("users")
+        async def resolve_users(*_):
+            return [{"id": "1", "name": "Alice"}]
+
+        schema = self._build(
+            """
+            type Query { users: [User!]! }
+            type User @cacheControl(maxAge: 600) { id: ID! name: String! }
+            """,
+            query_type,
+        )
+
+        cache_service = CacheService(
+            backend=InMemoryCacheBackend(maxsize=100),
+            key_builder=DefaultKeyBuilder(),
+            serializer=JsonSerializer(),
+            config=CacheConfig(default_max_age=0, calculate_http_headers=True),
+        )
+        handler = CachingGraphQLHTTPHandler(cache_service=cache_service, schema=schema)
+        handler.configure(schema=schema)
+
+        request = self._fake_request()
+        # The query never asks for __typename - the old implementation
+        # could only see the User type-level directive if it did.
+        data = {"query": "query { users { id name } }"}
+        success, response = await handler.execute_graphql_query(
+            request, data, context_value={}
+        )
+
+        assert success is True
+        assert request.state.cache_control_header == "max-age=600, public"
+
+    @pytest.mark.asyncio
+    async def test_dynamic_hint_from_resolver_is_applied(self) -> None:
+        from ariadne import QueryType
+
+        from cacheql.hints import set_cache_hint
+
+        query_type = QueryType()
+
+        @query_type.field("hinted")
+        async def resolve_hinted(_, info):
+            set_cache_hint(info, max_age=42, scope="PUBLIC")
+            return {"id": "1", "name": "Bob"}
+
+        schema = self._build(
+            """
+            type Query { hinted: User }
+            type User { id: ID! name: String! }
+            """,
+            query_type,
+        )
+
+        cache_service = CacheService(
+            backend=InMemoryCacheBackend(maxsize=100),
+            key_builder=DefaultKeyBuilder(),
+            serializer=JsonSerializer(),
+            config=CacheConfig(default_max_age=0, calculate_http_headers=True),
+        )
+        handler = CachingGraphQLHTTPHandler(cache_service=cache_service, schema=schema)
+        handler.configure(schema=schema)
+
+        request = self._fake_request()
+        data = {"query": "query { hinted { id name } }"}
+        await handler.execute_graphql_query(request, data, context_value={})
+
+        assert request.state.cache_control_header == "max-age=42, public"
+
+    @pytest.mark.asyncio
+    async def test_mutation_auto_invalidates_tagged_query(self) -> None:
+        from ariadne import MutationType, QueryType
+
+        query_type = QueryType()
+        mutation_type = MutationType()
+        state = {"name": "Alice"}
+
+        @query_type.field("user")
+        async def resolve_user(_, info, id):
+            return {"id": id, "name": state["name"]}
+
+        @mutation_type.field("updateUser")
+        async def resolve_update_user(_, info, id):
+            state["name"] = "Alice Updated"
+            return {"id": id, "name": state["name"]}
+
+        schema = self._build(
+            """
+            type Query { user(id: ID!): User @cacheControl(maxAge: 300) }
+            type Mutation { updateUser(id: ID!): User }
+            type User { id: ID! name: String! }
+            """,
+            query_type,
+            mutation_type,
+        )
+
+        cache_service = CacheService(
+            backend=InMemoryCacheBackend(maxsize=100),
+            key_builder=DefaultKeyBuilder(),
+            serializer=JsonSerializer(),
+            config=CacheConfig(
+                default_max_age=0, auto_invalidate_on_mutation=True
+            ),
+        )
+        handler = CachingGraphQLHTTPHandler(cache_service=cache_service, schema=schema)
+        handler.configure(schema=schema)
+
+        query_data = {"query": 'query { user(id: "1") { id name } }'}
+
+        request1 = self._fake_request()
+        _, r1 = await handler.execute_graphql_query(
+            request1, query_data, context_value={}
+        )
+        assert r1["data"]["user"]["name"] == "Alice"
+
+        request2 = self._fake_request()
+        _, r2 = await handler.execute_graphql_query(
+            request2, query_data, context_value={}
+        )
+        assert r2["data"]["user"]["name"] == "Alice"  # served from cache
+
+        mutation_data = {"query": 'mutation { updateUser(id: "1") { id name } }'}
+        request3 = self._fake_request()
+        await handler.execute_graphql_query(
+            request3, mutation_data, context_value={}
+        )
+
+        request4 = self._fake_request()
+        _, r4 = await handler.execute_graphql_query(
+            request4, query_data, context_value={}
+        )
+        assert r4["data"]["user"]["name"] == "Alice Updated"
+
+    @pytest.mark.asyncio
+    async def test_mutation_does_not_invalidate_when_disabled(self) -> None:
+        from ariadne import MutationType, QueryType
+
+        query_type = QueryType()
+        mutation_type = MutationType()
+        state = {"name": "Alice"}
+
+        @query_type.field("user")
+        async def resolve_user(_, info, id):
+            return {"id": id, "name": state["name"]}
+
+        @mutation_type.field("updateUser")
+        async def resolve_update_user(_, info, id):
+            state["name"] = "Alice Updated"
+            return {"id": id, "name": state["name"]}
+
+        schema = self._build(
+            """
+            type Query { user(id: ID!): User @cacheControl(maxAge: 300) }
+            type Mutation { updateUser(id: ID!): User }
+            type User { id: ID! name: String! }
+            """,
+            query_type,
+            mutation_type,
+        )
+
+        cache_service = CacheService(
+            backend=InMemoryCacheBackend(maxsize=100),
+            key_builder=DefaultKeyBuilder(),
+            serializer=JsonSerializer(),
+            config=CacheConfig(
+                default_max_age=0, auto_invalidate_on_mutation=False
+            ),
+        )
+        handler = CachingGraphQLHTTPHandler(cache_service=cache_service, schema=schema)
+        handler.configure(schema=schema)
+
+        query_data = {"query": 'query { user(id: "1") { id name } }'}
+        await handler.execute_graphql_query(
+            self._fake_request(), query_data, context_value={}
+        )
+
+        mutation_data = {"query": 'mutation { updateUser(id: "1") { id name } }'}
+        await handler.execute_graphql_query(
+            self._fake_request(), mutation_data, context_value={}
+        )
+
+        _, r = await handler.execute_graphql_query(
+            self._fake_request(), query_data, context_value={}
+        )
+        assert r["data"]["user"]["name"] == "Alice"  # stale: auto-invalidate is off

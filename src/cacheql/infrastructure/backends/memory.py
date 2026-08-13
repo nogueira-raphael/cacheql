@@ -1,16 +1,22 @@
 """In-memory cache backend implementation."""
 
 import fnmatch
+import time
 from datetime import timedelta
 
-from cachetools import TTLCache
+from cachetools import LRUCache
+
+# (serialized value, absolute expiry time in monotonic seconds, or None
+# for "never expires")
+_Entry = tuple[bytes, float | None]
 
 
 class InMemoryCacheBackend:
-    """In-memory cache backend using LRU with TTL support.
+    """In-memory cache backend using LRU eviction with per-item TTL.
 
-    Suitable for single-process deployments. Uses cachetools
-    for efficient LRU eviction and TTL expiration.
+    Suitable for single-process deployments. Uses cachetools' LRUCache
+    for maxsize eviction, with expiry tracked and enforced per entry so
+    that different cache-control maxAge values are actually honored.
     """
 
     def __init__(
@@ -22,16 +28,15 @@ class InMemoryCacheBackend:
 
         Args:
             maxsize: Maximum number of items in the cache.
-            default_ttl: Default TTL in seconds for items.
+            default_ttl: Default TTL in seconds, used when ``set()`` is
+                called without an explicit ``ttl``.
         """
         self._maxsize = maxsize
         self._default_ttl = default_ttl
-        self._cache: TTLCache[str, bytes] = TTLCache(
-            maxsize=maxsize,
-            ttl=default_ttl,
-        )
-        # Track tags separately for invalidation
-        self._tags: dict[str, set[str]] = {}
+        self._cache: LRUCache[str, _Entry] = LRUCache(maxsize=maxsize)
+
+    def _is_expired(self, expire_at: float | None) -> bool:
+        return expire_at is not None and expire_at <= time.monotonic()
 
     async def get(self, key: str) -> bytes | None:
         """Retrieve cached value by key.
@@ -42,8 +47,18 @@ class InMemoryCacheBackend:
         Returns:
             The cached value as bytes, or None if not found or expired.
         """
-        result = self._cache.get(key)
-        return result if isinstance(result, bytes) else None
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+
+        value: bytes
+        expire_at: float | None
+        value, expire_at = entry
+        if self._is_expired(expire_at):
+            self._cache.pop(key, None)
+            return None
+
+        return value
 
     async def set(
         self,
@@ -51,19 +66,18 @@ class InMemoryCacheBackend:
         value: bytes,
         ttl: timedelta | None = None,
     ) -> None:
-        """Store value with optional TTL.
-
-        Note: cachetools TTLCache uses a global TTL, so per-item TTL
-        is approximated. For precise per-item TTL, use Redis backend.
+        """Store value with optional per-item TTL.
 
         Args:
             key: The cache key.
             value: The value to store as bytes.
-            ttl: Optional time-to-live. If None, uses default.
+            ttl: Optional time-to-live. If None, uses ``default_ttl``.
         """
-        # TTLCache doesn't support per-item TTL natively,
-        # but we store anyway (uses global TTL)
-        self._cache[key] = value
+        effective_ttl = ttl.total_seconds() if ttl is not None else self._default_ttl
+        expire_at = (
+            time.monotonic() + effective_ttl if effective_ttl is not None else None
+        )
+        self._cache[key] = (value, expire_at)
 
     async def delete(self, key: str) -> bool:
         """Delete cached value.
@@ -89,12 +103,11 @@ class InMemoryCacheBackend:
         Returns:
             True if the key exists, False otherwise.
         """
-        return key in self._cache
+        return await self.get(key) is not None
 
     async def clear(self) -> None:
         """Clear all cached values."""
         self._cache.clear()
-        self._tags.clear()
 
     async def delete_pattern(self, pattern: str) -> int:
         """Delete keys matching pattern.
@@ -105,22 +118,29 @@ class InMemoryCacheBackend:
         Returns:
             Number of keys deleted.
         """
-        # Find matching keys
-        keys_to_delete = [
-            key for key in list(self._cache.keys())
-            if fnmatch.fnmatch(key, pattern)
-        ]
-
-        # Delete matched keys
         count = 0
-        for key in keys_to_delete:
-            try:
-                del self._cache[key]
+        for key in await self.keys(pattern):
+            if await self.delete(key):
                 count += 1
-            except KeyError:
-                pass
-
         return count
+
+    async def keys(self, pattern: str) -> list[str]:
+        """List non-expired keys matching a glob pattern.
+
+        Args:
+            pattern: Glob-style pattern to match keys.
+
+        Returns:
+            Matching keys, with any expired entries purged along the way.
+        """
+        matched: list[str] = []
+        for key, (_value, expire_at) in list(self._cache.items()):
+            if self._is_expired(expire_at):
+                self._cache.pop(key, None)
+                continue
+            if fnmatch.fnmatch(key, pattern):
+                matched.append(key)
+        return matched
 
     def __len__(self) -> int:
         """Return the number of items in the cache."""
